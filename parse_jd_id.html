@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>解析京东商品ID</title>
+</head>
+<body>
+    <h1>京东商品ID解析</h1>
+    <div id="result"></div>
+    <script>
+const url = 'https://u.jd.com/cGEzRxK';
+document.getElementById('result').innerHTML = '<h2>链接: ' + url + '</h2>';
+document.getElementById('result').innerHTML += '<p>注：由于浏览器安全限制（CORS跨域），无法直接在前端访问这个短链接。</p>';
+document.getElementById('result').innerHTML += '<p>根据之前的代码逻辑，解析过程如下：</p>';
+document.getElementById('result').innerHTML += '<ol>';
+document.getElementById('result').innerHTML += '<li>访问 u.jd.com/cGEzRxK，获取页面HTML</li>';
+document.getElementById('result').innerHTML += '<li>从HTML中匹配 var hrl=\'...\' 提取跳转链接</li>';
+document.getElementById('result').innerHTML += '<li>访问跳转链接，获取最终的商品页面URL</li>';
+document.getElementById('result').innerHTML += '<li>从最终URL中提取商品ID（数字部分）</li>';
+document.getElementById('result').innerHTML += '</ol>';
+document.getElementById('result').innerHTML += '<p><strong>由于这两条消息的链接完全相同，所以它们的商品ID也完全一样！</strong></p>';
+
+// 为了演示，让我们模拟一个可能的结果
+document.getElementById('result').innerHTML += '<h3>模拟解析结果：</h3>';
+document.getElementById('result').innerHTML += '<p>假设最终跳转后的商品页面是类似这样的：</p>';
+document.getElementById('result').innerHTML += '<p>https://item.jd.com/100012345678.html</p>';
+document.getElementById('result').innerHTML += '<p>那么商品ID就是：<strong>JD:100012345678</strong></p>';
+    </script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>测试sku提取</title>
+</head>
+<body>
+    <h1>测试sku提取</h1>
+    <div id="result"></div>
+    <script>
+function getJDParam(url, name) {
+  const match = url.match(new RegExp('[?&]' + name + '=([^&]*)'));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function extractJDSyncId(url) {
+  console.log('extractJDSyncId 被调用，url:', url);
+  
+  if (/middle-page-pro\.pf\.jd\.com/i.test(url)) {
+    console.log('匹配到 middle-page-pro.pf.jd.com');
+    const sku = getJDParam(url, 'sku');
+    console.log('getJDParam 返回 sku:', sku);
+    if (sku && /^\d{5,}$/.test(sku)) {
+      console.log('sku符合条件，返回 JD:' + sku);
+      return 'JD:' + sku;
+    }
+  }
+  
+  return null;
+}
+
+const testUrl = 'https://middle-page-pro.pf.jd.com/?sku=10212032119368&advertid=08277753';
+console.log('测试URL:', testUrl);
+
+const result = extractJDSyncId(testUrl);
+console.log('最终结果:', result);
+
+document.getElementById('result').innerHTML = '<p>测试URL: ' + testUrl + '</p>';
+document.getElementById('result').innerHTML += '<p>结果: ' + result + '</p>';
+    </script>
+</body>
+</html>

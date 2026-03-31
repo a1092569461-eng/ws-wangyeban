@@ -1,0 +1,2080 @@
+﻿
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebSocket 消息监控</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f2f5;color:#333;min-height:100vh;padding:20px;padding-top:40px;display:flex;gap:16px;}
+  .main-area{flex:1;min-width:0;}
+  .config{position:fixed;left:20px;top:20px;background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 12px rgba(0,0,0,0.12);z-index:100;width:280px;}
+  .config h3{font-size:14px;color:#666;margin-bottom:12px;font-weight:normal;}
+  .config-row{margin-bottom:12px;}
+  .config input{width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;box-sizing:border-box;}
+  .config input:focus{outline:none;border-color:#2196f3;}
+  .config input:disabled{background:#f5f5f5;}
+  .btn-row{display:flex;gap:8px;}
+  button{flex:1;padding:10px 16px;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:500;}
+  #connectBtn{background:#2196f3;color:#fff;}
+  #connectBtn:hover{background:#1976d2;}
+  #connectBtn:disabled{background:#ccc;cursor:not-allowed;}
+  #connectBtn.connected{background:#ef5350;}
+  #connectBtn.connected:hover{background:#e53935;}
+  #clearBtn{background:#fff;color:#666;border:1px solid #ddd;}
+  #clearBtn:hover{background:#f5f5f5;}
+  .status-bar{position:fixed;left:20px;top:180px;background:#fff;padding:12px 16px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.08);z-index:100;display:flex;align-items:center;gap:8px;}
+  .dot{width:10px;height:10px;border-radius:50%;background:#e74c3c;display:inline-block;}
+  .dot.connected{background:#2ecc71;}
+  .status-text{color:#666;font-size:13px;}
+  .msg-count{color:#999;font-size:12px;}
+  #debug{position:fixed;left:20px;top:220px;width:280px;background:#fff3cd;padding:10px 14px;border-radius:8px;font-size:12px;color:#856404;display:none;max-height:150px;overflow:auto;z-index:99;}
+  #debug.show{display:block;}
+  #debug:empty{display:none;}
+  #messages{max-width:700px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+  .msg-card{background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,0.1);}
+  .msg-card.unread-highlight{animation:unreadBlink 1.5s ease-out forwards;}
+  .msg-card.highlight{border:2px solid #ff9800; background:#fff8e1;}
+  .msg-card.hidden-by-mode{display:none;}
+  @keyframes unreadBlink{0%{background:transparent;}100%{background:transparent;}}
+  .msg-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#fff;border-bottom:1px solid #f0f0f0;}
+  .msg-source-wrap{display:flex;align-items:center;gap:8px;flex:1;min-width:0;overflow:hidden;}
+  .msg-source{font-weight:600;color:#1a1a1a;font-size:14px;white-space:nowrap;}
+  .msg-source .group-icon{color:#07c160;margin-right:6px;}
+  .msg-id-tag{color:#999;font-size:12px;font-weight:normal;margin-left:4px;cursor:default;}
+  .match-reason{font-size:12px;color:#ff9800;margin-left:8px;white-space:nowrap;}
+  .dup-tag{background:transparent;color:#e65100;padding:3px 10px;border-radius:12px;font-size:12px;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;flex-shrink:0;}
+  .dup-tag.hidden{display:none !important;}
+  .dup-tag:hover{background:#ffe0b2;}
+  .dup-tag .arrow{transition:transform 0.2s;margin-left:2px;}
+  .dup-tag.expanded .arrow{transform:rotate(180deg);}
+  .dup-tag.product-dup{background:#e8f5e9;color:#2e7d32;}
+  .dup-tag.product-dup:hover{background:#c8e6c9;}
+  .dup-groups{display:none;padding:0 16px 12px;font-size:12px;color:#666;}
+  .dup-groups.show{display:block;}
+  .dup-groups-list{padding:8px 12px;background:#fafafa;border-radius:6px;margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;}
+  .dup-groups-list span{background:#f5f5f5;padding:2px 8px;border-radius:4px;}
+  .msg-time{color:#999;font-size:12px;white-space:nowrap;margin-left:8px;flex-shrink:0;}
+  .msg-body{padding:16px;}
+  .msg-content{color:#333;line-height:1.7;white-space:pre-wrap;word-break:break-all;}
+  .msg-link{color:#1976d2;text-decoration:underline;cursor:pointer;}
+  .msg-image{max-width:100%;max-height:300px;border-radius:8px;margin-top:10px;display:block;cursor:zoom-in;}
+  .msg-footer{padding:10px 16px;border-top:1px solid #f5f5f5;display:flex;justify-content:space-between;align-items:center;}
+  .msg-meta{color:#999;font-size:12px;}
+  .msg-meta span{margin-right:12px;}
+  .copy-btn{background:#f5f5f5;color:#666;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;}
+  .copy-btn:hover{background:#e0e0e0;}
+  .copy-btn.copied{background:#4caf50;color:#fff;}
+  .context-btn{background:#e3f2fd;color:#1976d2;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;white-space:nowrap;min-width:90px;}
+  .context-btn:hover{background:#bbdefb;}
+  .empty{text-align:center;color:#999;padding:60px 20px;font-size:16px;}
+  .img-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.9);z-index:9999;display:none;align-items:center;justify-content:center;cursor:zoom-out;}
+  .img-overlay.show{display:flex;}
+  .img-overlay img{max-width:95%;max-height:95%;object-fit:contain;}
+  .context-modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:9998;display:none;align-items:center;justify-content:center;}
+  .context-modal.show{display:flex;}
+  .context-modal .modal-box{background:#fff;border-radius:12px;width:90%;max-width:600px;max-height:80vh;display:flex;flex-direction:column;}
+  .context-modal .modal-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #eee;position:relative;}
+  .context-modal .modal-title{font-weight:600;font-size:14px;}
+  .context-modal .modal-close{background:none;border:none;font-size:16px;cursor:pointer;color:#999;padding:0;width:24px;height:24px;position:absolute;right:12px;top:50%;transform:translateY(-50%);}
+  .context-modal .modal-close:hover{color:#333;}
+  .context-modal .modal-body{flex:1;overflow-y:auto;padding:16px;max-height:60vh;}
+  .context-item{padding:12px;border-radius:8px;margin-bottom:8px;background:#fafafa;}
+  .context-item.current{background:#e3f2fd;border:2px solid #2196f3;}
+  .context-item .context-time{color:#999;font-size:11px;margin-bottom:4px;}
+  .context-item .context-content{color:#333;font-size:13px;line-height:1.5;word-break:break-all;}
+  .context-item .context-arrow{color:#2196f3;font-weight:bold;text-align:center;padding:4px 0;}
+  .ctx-item{border-radius:12px;overflow:hidden;margin-bottom:4px;border:2px solid transparent;background:#fff;}
+  .ctx-item.current{border-color:#2196f3;background:#e3f2fd;}
+  .ctx-header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#fafafa;border-bottom:1px solid #f0f0f0;}
+  .ctx-sender{font-weight:600;color:#1a1a1a;font-size:13px;}
+  .ctx-sender .ctx-icon{margin-right:5px;}
+  .ctx-time{color:#999;font-size:12px;}
+  .ctx-body{padding:12px 14px;}
+  .ctx-content{color:#333;line-height:1.7;white-space:pre-wrap;word-break:break-all;font-size:14px;}
+  .ctx-content .msg-link{color:#1976d2;text-decoration:underline;cursor:pointer;}
+  .ctx-img{max-width:100%;max-height:250px;border-radius:6px;margin-top:8px;display:block;cursor:zoom-in;}
+  .ctx-copy-btn.copied{background:#4caf50;color:#fff;}
+  .ctx-gap{text-align:center;color:#999;font-size:11px;padding:4px 0;margin:2px 0;}
+
+  /* 配置区域和状态栏默认隐藏，通过悬浮按钮控制显示 */
+  .config, .status-bar {
+    display: none !important;
+  }
+  .config.show, .status-bar.show {
+    display: block !important;
+  }
+  .status-bar.show {
+    display: flex !important;
+  }
+  
+  /* 悬浮按钮 */
+  #configToggle {
+    position: fixed;
+    left: 20px;
+    top: 20px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #2196f3;
+    color: white;
+    border: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    cursor: pointer;
+    z-index: 1001;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #configToggle:hover {
+    background: #1976d2;
+  }
+  #configToggle.show {
+    background: #ef5350;
+  }
+  
+  /* 顶部未读消息栏 */
+  #topUnreadBar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 40px;
+    background: #2196f3;
+    color: #fff;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  #topUnreadBar.show {
+    display: flex;
+  }
+  
+  /* 移动端自适应 */
+  @media (max-width: 768px) {
+    body {
+      padding: 10px;
+      padding-top: 50px;
+      gap: 8px;
+    }
+    
+    #topUnreadBar {
+      height: 50px;
+      font-size: 16px;
+    }
+    
+    #messages {
+      max-width: 100% !important;
+      margin: 0 !important;
+    }
+    
+    .msg-header {
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .msg-source-wrap {
+      flex-wrap: nowrap;
+    }
+    
+    /* 第二个.msg-header规则已合并到第一个中 */
+    
+    .msg-footer {
+      flex-direction: row;
+      gap: 8px;
+      align-items: center;
+    }
+    
+    .msg-footer > div:last-child {
+      display: flex;
+      gap: 8px;
+      flex: 1;
+      justify-content: flex-end;
+    }
+    
+    .copy-btn, .context-btn {
+      flex: 0 1 auto;
+      min-width: 80px;
+    }
+    
+    #debug {
+      display: none;
+    }
+    
+    .msg-card {
+      margin-bottom: 8px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    }
+    
+    .msg-content {
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    
+    .copy-btn, .context-btn {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .dup-groups-list {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+
+</style>
+</head>
+<body>
+<button id="configToggle" onclick="toggleConfig()">⚙</button>
+
+<div id="topUnreadBar" onclick="jumpToUnread()"></div>
+<div id="imgOverlay" class="img-overlay"><img id="overlayImg" src=""></div>
+
+<div id="contextModal" class="context-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title" id="contextTitle">🏠 群消息上下文</span>
+      <button class="modal-close" id="contextClose">×</button>
+    </div>
+    <div class="modal-body" id="contextList"></div>
+  </div>
+</div>
+
+<div class="main-area">
+  <div id="messages"><div class="empty">正在连接...</div></div>
+
+  <div class="status-bar">
+    <span class="dot" id="dot"></span>
+    <span class="status-text" id="statusText">未连接</span>
+    <span class="msg-count">共 <span id="count">0</span> 条</span>
+
+  </div>
+</div>
+
+
+
+<div class="config">
+  <h3>WebSocket 连接</h3>
+  <div class="config-row">
+   <input type="text" id="wsUrl" value="ws://124.222.13.5:3089" placeholder="0.0.0.0">
+  </div>
+  <div class="btn-row">
+    <button id="connectBtn" disabled>连接中...</button>
+    <button id="clearBtn">清空</button>
+  </div>
+  <div class="config-row" style="margin-top:12px;">
+    <select id="displayMode" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+      <option value="all">全部消息</option>
+      <option value="highlight">仅重点消息</option>
+    </select>
+  </div>
+  <div class="config-row" style="margin-top:12px;">
+    <select id="popupMode" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+      <option value="off">弹窗: 关闭</option>
+      <option value="on">弹窗: 开启</option>
+    </select>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'ws_monitor_messages';
+const STORAGE_URL_KEY = 'ws_monitor_url';
+const STORAGE_MSG_ID_KEY = 'ws_monitor_msg_id';
+const DEDUP_DURATION = 15 * 60 * 1000;
+
+const TAO_REG = /(?:[^\w])([a-zA-Z0-9]{11})(?:[^\w]|$)/g;
+const LINK_REG = /\w+:\/\/[^\s]+/gi;
+const CQ_IMAGE_REG = /\[CQ:image,[^\]]+\]/g;
+const CLEAN_TAO_REG = /([^\u4e00-\u9fa5a-zA-Z0-9]*[a-z0-9]{11}[^\u4e00-\u9fa5a-zA-Z0-9]*)/gi;
+
+const CHAR_MAP = {
+  '紅':'红','裏':'里','衛':'卫','復':'复','國':'国','區':'区',
+  '単':'单','卷':'券','劵':'券','虹':'红',
+  '淦':'金','臧':'藏',
+  '亓':'元','块':'元',
+  '後':'后','發':'发','麵':'面','萬':'万',
+  '與':'与','為':'为','個':'个','隻':'只',
+  '於':'于','幹':'干','曆':'历','鬥':'斗','係':'系',
+  '樸':'朴','硃':'朱','幾':'几','妳':'你',
+  '條':'条','簾':'帘','範':'范','號':'号',
+  '兔':'免','免':'兔',
+};
+
+const OCR_MAP = { '兔':'免','亓':'元' };
+
+function normalizeOCR(text) {
+  for (const [from, to] of Object.entries(OCR_MAP)) {
+    text = text.split(from).join(to);
+  }
+  return text;
+}
+
+function textSimilarity(a, b) {
+  if (a === b) return 1;
+  if (!a || !b) return 0;
+  const lenA = a.length, lenB = b.length;
+  const maxLen = Math.max(lenA, lenB);
+  if (maxLen === 0) return 1;
+  const dist = levenshteinDistance(a, b);
+  return 1 - dist / maxLen;
+}
+
+function levenshteinDistance(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1];
+      } else {
+        dp[i][j] = Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]) + 1;
+      }
+    }
+  }
+  return dp[m][n];
+}
+
+const SIMILARITY_THRESHOLD = 0.75;
+
+const HL_KEYWORDS = ['神价', '漏洞', '0元', '免单', '兔单', '速度', '免费', 'bug', '锁‼', '免', '兔', 'O亓', '快‼️', '有水', '快锁'];
+
+function hlIsHighlight(data, allCodes) {
+  if (!data || (!data.raw_message && !data.message)) return { triggered: false, reasons: [], keywords: [] };
+  const text = cleanContent(data.raw_message || data.message || '');
+  const rawText = data.raw_message || data.message || '';
+
+  const hasCodes = allCodes && allCodes.length > 0;
+  const hasLink = /(?:jd\.com|taobao\.com|tmall\.com|jd\.cn|mao\.mall)/i.test(rawText);
+  const hasCodeOrLink = hasCodes || hasLink;
+
+  let cleanedText = text;
+  cleanedText = cleanedText.replace(CLEAN_TAO_REG, '');
+  cleanedText = cleanedText.replace(/https?:\/\/[^\s<>]+/gi, '');
+  cleanedText = cleanedText.replace(/(?:链接|口令|密码|提取码|淘口令)[：:]\s*/gi, '');
+
+  const keywords = [];
+  for (const kw of HL_KEYWORDS) {
+    if (cleanedText.toLowerCase().includes(kw.toLowerCase())) {
+      keywords.push(kw);
+    }
+  }
+  const reasons = [];
+  if (keywords.length > 0) reasons.push(`关键词:${keywords.join(',')}`);
+
+  const price = extractPriceFromText(cleanedText);
+  const hasPrice = price !== null;
+
+  if (hasPrice && price <= 6 && hasCodeOrLink) {
+    reasons.push(`好价:${price}元`);
+  }
+
+  const pureText = cleanedText.replace(/[\s,，。.，。！!？?\d]+/g, ' ').trim();
+  const pureTextLength = pureText.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '').length;
+
+  if (pureTextLength <= 7 && hasCodeOrLink) {
+    reasons.push('短文案');
+  }
+
+  return { triggered: reasons.length > 0, reasons, keywords, price };
+}
+
+function extractPriceFromText(text) {
+  const matches = [];
+  let match;
+
+  // 优先级1: 数字+单位 (元、亓、块、大洋)
+  const unitRegex = /(\d+(?:\.\d+)?)\s*(?:元|亓|块|大洋)/gi;
+  while ((match = unitRegex.exec(text)) !== null) {
+    const price = parseFloat(match[1]);
+    if (!isNaN(price) && price > 0 && price <= 20000) {
+      matches.push(price);
+    }
+  }
+
+  // 优先级2: 方括号数字 【19.79】
+  const bracketRegex = /【(\d+(?:\.\d+)?)】/g;
+  while ((match = bracketRegex.exec(text)) !== null) {
+    const price = parseFloat(match[1]);
+    if (!isNaN(price) && price > 0 && price <= 20000) {
+      matches.push(price);
+    }
+  }
+
+  // 优先级3: 凑后价格 凑后4.16
+  const couhouRegex = /凑后(\d+(?:\.\d+)?)/gi;
+  while ((match = couhouRegex.exec(text)) !== null) {
+    const price = parseFloat(match[1]);
+    if (!isNaN(price) && price > 0 && price <= 20000) {
+      matches.push(price);
+    }
+  }
+
+  // 优先级4: 关键词+数字 (拍下、到手、实付、附、付) + 数字
+  const keywordNumRegex = /(?:拍下|到手|实付|附|付)(\d+(?:\.\d+)?)/gi;
+  while ((match = keywordNumRegex.exec(text)) !== null) {
+    const price = parseFloat(match[1]);
+    if (!isNaN(price) && price > 0 && price <= 20000) {
+      matches.push(price);
+    }
+  }
+
+  // 优先级5: 数字+关键词 (5.6拍下、5.6到手)
+  const numKeywordRegex = /(\d+(?:\.\d+)?)\s*(?:拍下|到手)/gi;
+  while ((match = numKeywordRegex.exec(text)) !== null) {
+    const price = parseFloat(match[1]);
+    if (!isNaN(price) && price > 0 && price <= 20000) {
+      matches.push(price);
+    }
+  }
+
+  // 优先级6: 表情+数字 (💰5.6 或 5.6💰)
+  const emojiRegex = /(💰|¥|$)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(💰|¥|$)/g;
+  while ((match = emojiRegex.exec(text)) !== null) {
+    const priceStr = match[2] || match[3];
+    const price = parseFloat(priceStr);
+    if (!isNaN(price) && price > 0 && price <= 20000) {
+      matches.push(price);
+    }
+  }
+
+  // 优先级7: 单独数字 (边界匹配 + 后面不能是中文/英文/数字)
+  const standAloneRegex = /(?:^|[\s，。！？:]\s*)(\d+(?:\.\d+)?)(?![0-9])(?=[\s\ud800-\udfff]|(?=[^一-龥a-zA-Z]|$))/g;
+  while ((match = standAloneRegex.exec(text)) !== null) {
+    const price = parseFloat(match[1]);
+    if (!isNaN(price) && price > 0 && price <= 20000) {
+      matches.push(price);
+    }
+  }
+
+  if (matches.length === 0) return null;
+
+  // 选择最高价格
+  const maxPrice = Math.max(...matches);
+  if (maxPrice > 20000) return null;
+
+  return maxPrice;
+}
+const connectBtn = document.getElementById('connectBtn');
+const clearBtn = document.getElementById('clearBtn');
+const wsUrlInput = document.getElementById('wsUrl');
+const messagesDiv = document.getElementById('messages');
+const dot = document.getElementById('dot');
+const statusText = document.getElementById('statusText');
+const countSpan = document.getElementById('count');
+const debugDiv = document.getElementById('debug');
+const imgOverlay = document.getElementById('imgOverlay');
+const overlayImg = document.getElementById('overlayImg');
+const contextModal = document.getElementById('contextModal');
+const contextTitle = document.getElementById('contextTitle');
+const contextList = document.getElementById('contextList');
+const contextClose = document.getElementById('contextClose');
+
+let msgCount = 0;
+let ws = null;
+let reconnectTimer = null;
+let reconnectCount = 0;
+let savedMessages = [];
+let duplicateTracker = new Map();
+let productDuplicateTracker = new Map();
+let cleanupTimer = null;
+let isManualClose = false;
+let globalMsgId = 0;
+let unreadCount = 0;
+const unreadBadge = document.getElementById('topUnreadBar');
+let saveTimer = null;
+let displayMode = localStorage.getItem('ws_monitor_display_mode') || 'all';
+let popupMode = localStorage.getItem('ws_monitor_popup_mode') || 'on';
+let isHighlightPopup = false; // 标记是否是重点消息弹窗
+
+function toggleConfig() {
+  const config = document.querySelector('.config');
+  const statusBar = document.querySelector('.status-bar');
+  const toggle = document.getElementById('configToggle');
+  const isShowing = config.classList.contains('show');
+  config.classList.toggle('show');
+  statusBar.classList.toggle('show');
+  toggle.classList.toggle('show', !isShowing);
+  toggle.textContent = isShowing ? '⚙' : '×';
+}
+
+window.addEventListener('scroll', () => {
+  const distToBottom = document.body.scrollHeight - window.scrollY - window.innerHeight;
+  if (distToBottom < 50) {
+    unreadCount = 0;
+    unreadBadge.classList.remove('show');
+    messagesDiv.querySelectorAll('[data-unread="true"]').forEach(el => el.removeAttribute('data-unread'));
+  }
+}, { passive: true });
+
+function log(msg){
+  if (debugDiv) {
+    debugDiv.textContent = msg;
+    debugDiv.classList.add('show');
+  }
+  console.log(msg);
+}
+
+function jumpToUnread() {
+  const firstUnread = messagesDiv.querySelector('[data-unread="true"]');
+  if (!firstUnread) return;
+  firstUnread.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  firstUnread.classList.add('unread-highlight');
+  firstUnread.removeAttribute('data-unread');
+    unreadCount = 0;
+    unreadBadge.classList.remove('show');
+    messagesDiv.querySelectorAll('[data-unread="true"]').forEach(el => el.removeAttribute('data-unread'));
+  setTimeout(() => {
+    firstUnread.classList.remove('unread-highlight');
+  }, 1500);
+}
+
+function clearLog(){
+  debugDiv.textContent = '';
+  debugDiv.classList.remove('show');
+}
+
+function simpleHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function cleanContent(content) {
+  content = String(content);
+  content = content.replace(CQ_IMAGE_REG, '');
+  content = content.replace(/\[CQ:reply,[^\]]+\]/g, '');
+  content = content.replace(/\[CQ:at,qq=\d+,name=([^\]]+)\]/g, '@$1');
+  content = content.replace(/\[CQ:[^\]]+\]/g, '');
+  content = content.replace(/&#91;/g, '[');
+  content = content.replace(/&#93;/g, ']');
+  content = content.replace(/&amp;/g, '&');
+  return content;
+}
+
+function extractTextContent(data) {
+  let text = '';
+  if (data.message) {
+    if (Array.isArray(data.message)) {
+      data.message.forEach(m => {
+        if (m.type === 'text') {
+          text += m.data.text + ' ';
+        }
+      });
+    } else {
+      text = String(data.message);
+    }
+  } else if (data.raw_message) {
+    text = String(data.raw_message);
+  }
+  text = cleanContent(text);
+  return text.trim();
+}
+
+function extractImageIds(data) {
+  const ids = [];
+  if (data.message && Array.isArray(data.message)) {
+    data.message.forEach(m => {
+      if (m.type === 'image') {
+        const file = m.data.file || m.data.url || '';
+        const match = file.match(/[a-zA-Z0-9]{20,}/);
+        if (match) ids.push(match[0]);
+      }
+    });
+  }
+  return ids;
+}
+
+function extractAllTaoCodes(data) {
+  const text = (data.raw_message || String(data.message || '')).replace(CQ_IMAGE_REG, '');
+  const codes = [];
+  for (const m of text.matchAll(CLEAN_TAO_REG)) {
+    let code = m[1].replace(/^[^\u4e00-\u9fa5a-zA-Z0-9]+/, '').replace(/[^\u4e00-\u9fa5a-zA-Z0-9]+$/, '');
+    if (code.length === 11 && /[a-z]/.test(code)) codes.push(code);
+  }
+  return codes;
+}
+
+async function fetchProductId(taoCode) {
+  const url = `https://api.zhetaoke.com:10001/api/open_shangpin_id.ashx?appkey=9cf0a8e0abe44a37aa0ac29682f281bf&sid=162371&content=${encodeURIComponent(taoCode)}&type=1&tlj=1&hjs=1&pid=mm_420790137_511000486_108879600217`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+  try {
+    const resp = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    const data = await resp.json();
+    if (data && data.item_id) {
+      const parts = data.item_id.split('-');
+      return parts.length > 1 ? parts[1] : data.item_id;
+    }
+    return null;
+  } catch(e) {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
+const JD_URL_REG = /(?:https?:\/\/)?(?:[a-z]*\.)?(?:jd\.com|3\.cn)[^\s]*/gi;
+
+function getJDParam(url, name) {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.searchParams.get(name);
+  } catch (e) {
+    const match = url.match(new RegExp('[?&]' + name + '=([^&]*)'));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+}
+
+async function fetchWithTimeout(url, timeout) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const resp = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    return await resp.text();
+  } catch(e) {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
+async function fetchRedirect(url, timeout) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const resp = await fetch(url, { redirect: 'manual', signal: controller.signal });
+    clearTimeout(timer);
+    return resp.headers.get('Location') || null;
+  } catch(e) {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
+function extractJDUrls(text) {
+  const urls = [];
+  const regex = /(?:https?:\/\/)?(?:[a-z0-9]*\.)*(?:jd\.com|3\.cn)[^\s<>"']*/gi;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    let url = match[0];
+    if (!url.startsWith('http')) url = 'https://' + url;
+    urls.push(url);
+  }
+  return urls;
+}
+
+function extractJDSyncId(url) {
+  const cleanUrl = url.split('?')[0];
+  
+  // v.m.jd.com → p参数
+  if (/v\.m\.jd\.com/i.test(url)) {
+    const p = getJDParam(url, 'p');
+    if (p) {
+      const firstItem = p.split(',')[0];
+      const skuId = firstItem.split(':')[0];
+      if (/^\d{6,}$/.test(skuId)) return 'JD:' + skuId;
+    }
+  }
+  
+  // skuList参数
+  if (/skuList/i.test(url)) {
+    const skuList = getJDParam(url, 'skuList');
+    if (skuList) {
+      const firstItem = skuList.split(',')[0];
+      const skuId = firstItem.split(':')[0];
+      if (/^\d{6,}$/.test(skuId)) return 'JD:' + skuId;
+    }
+  }
+  
+  // /item.xxx.html → 商品ID
+  const itemMatch = url.match(/\/item\.(\d{5,})/);
+  if (itemMatch) return 'JD:' + itemMatch[1];
+  
+  // /数字.html → 商品ID
+  const pathMatch = cleanUrl.match(/\/(\d{5,})\.html/);
+  if (pathMatch) return 'JD:' + pathMatch[1];
+  
+  // /product/xxx.html → 商品ID
+  const productMatch = cleanUrl.match(/\/product\/(\d{5,})\.html/);
+  if (productMatch) return 'JD:' + productMatch[1];
+  
+  // lives.jd.com → #/和?之间
+  const livesMatch = url.match(/lives\.jd\.com.*?#\/([^?]+)/i);
+  if (livesMatch) return 'JD:LIVE:' + livesMatch[1];
+  
+  // coupon.m.jd.com → key参数
+  if (/coupon\.m\.jd\.com/i.test(url)) {
+    const key = getJDParam(url, 'key');
+    if (key) return 'JD:COUPON:' + key;
+  }
+  
+  // middle-page-pro.pf.jd.com → sku参数
+  if (/middle-page-pro\.pf\.jd\.com/i.test(url)) {
+    const sku = getJDParam(url, 'sku');
+    if (sku && /^\d{5,}$/.test(sku)) return 'JD:' + sku;
+  }
+  
+  // pro.m.jd.com → 活动ID
+  const proMatch = url.match(/pro\.m\.jd\.com.*?\/active\/([^/?#]+)/i);
+  if (proMatch) return 'JD:ACT:' + proMatch[1];
+  
+  // mall.jd.com 会场/活动页
+  const mallMatch = url.match(/mall\.jd\.com\/index\.html\?activityId=(\d+)/i);
+  if (mallMatch) return 'JD:MALL:' + mallMatch[1];
+  
+  // jd.com/activity/xxx
+  const activityMatch = url.match(/jd\.com\/activity\/([^/?#]+)/i);
+  if (activityMatch) return 'JD:ACTIVITY:' + activityMatch[1];
+  
+  // q参数
+  const q = getJDParam(url, 'q');
+  if (q && q.length > 5 && /^\d{5,}$/.test(q)) return 'JD:' + q;
+  
+  // 兜底：jd.com/后到?前的数字路径
+  const genericMatch = url.match(/jd\.com\/(\d{5,})/i);
+  if (genericMatch) return 'JD:' + genericMatch[1];
+  
+  // 最后兜底：只要是京东域名的链接，都统一标记（会走到异步解析）
+  return null;
+}
+
+async function extractJDAsyncId(url) {
+  if (/u\.jd\.com/i.test(url)) {
+    const html = await fetchWithTimeout(url, 3000);
+    if (!html) return null;
+    
+    // 方式1：var hrl='...'
+    let hrlMatch = html.match(/var hrl='([^']+)'/);
+    if (hrlMatch) {
+      const location = await fetchRedirect(hrlMatch[1], 3000);
+      if (location) {
+        const id = extractJDSyncId(location);
+        if (id) return id;
+      }
+    }
+    
+    // 方式2：window.location.href='...'
+    const locationMatch = html.match(/window\.location\.href\s*=\s*["']([^"']+)["']/);
+    if (locationMatch) {
+      const location = await fetchRedirect(locationMatch[1], 3000);
+      if (location) {
+        const id = extractJDSyncId(location);
+        if (id) return id;
+      }
+    }
+    
+    // 方式3：location.replace('...')
+    const replaceMatch = html.match(/location\.replace\s*\(\s*["']([^"']+)["']\s*\)/);
+    if (replaceMatch) {
+      const location = await fetchRedirect(replaceMatch[1], 3000);
+      if (location) {
+        const id = extractJDSyncId(location);
+        if (id) return id;
+      }
+    }
+    
+    // 方式4：直接从HTML中找跳转的meta标签
+    const metaMatch = html.match(/<meta[^>]*http-equiv\s*=\s*["']refresh["'][^>]*content\s*=\s*["']\d+;\s*url=([^"']+)["']/i);
+    if (metaMatch) {
+      const location = await fetchRedirect(metaMatch[1], 3000);
+      if (location) {
+        const id = extractJDSyncId(location);
+        if (id) return id;
+      }
+    }
+    
+    return null;
+  }
+  
+  if (/3\.cn\//i.test(url)) {
+    const location = await fetchRedirect(url, 3000);
+    if (!location) return null;
+    return extractJDSyncId(location);
+  }
+  
+  return null;
+}
+
+async function extractJDProductIds(data) {
+  const text = data.raw_message || data.message || '';
+  const urls = extractJDUrls(text);
+  const ids = [];
+  
+  for (const url of urls) {
+    const syncId = extractJDSyncId(url);
+    if (syncId) {
+      ids.push(syncId);
+      continue;
+    }
+    const asyncId = await extractJDAsyncId(url);
+    if (asyncId) ids.push(asyncId);
+  }
+  
+  return [...new Set(ids)];
+}
+
+function extractImages(data) {
+  const urlSet = new Set();
+  let hasArrayImages = false;
+  
+  // 规范化图片URL，去除末尾问号等
+  function normalizeUrl(url) {
+    if (url.endsWith('?')) {
+      url = url.slice(0, -1);
+    }
+    return url;
+  }
+  
+  // 处理数组格式的消息（结构化消息）
+  if (data.message && Array.isArray(data.message)) {
+    data.message.forEach(m => {
+      if (m.type === 'image') {
+        let url = m.data.url || m.data.file;
+        if (url) {
+          urlSet.add(normalizeUrl(url));
+          hasArrayImages = true;
+        }
+      }
+    });
+  }
+  
+  // 从CQ码字符串中提取图片URL
+  function extractFromCQ(str) {
+    if (!str || typeof str !== 'string') return;
+    const regex = /\[CQ:image,([^\]]+)\]/g;
+    let match;
+    while ((match = regex.exec(str)) !== null) {
+      const params = match[1];
+      let url = '';
+      const urlMatch = params.match(/url=([^,]+)/);
+      if (urlMatch) {
+        url = urlMatch[1];
+      } else {
+        const fileMatch = params.match(/file=([^,]+)/);
+        if (fileMatch) {
+          url = fileMatch[1];
+        }
+      }
+      if (url) urlSet.add(normalizeUrl(url));
+    }
+  }
+  
+  // 从data.message字符串中提取
+  if (typeof data.message === 'string') {
+    extractFromCQ(data.message);
+  }
+  // 从data.raw_message中提取，但仅当数组中没有图片时
+  if (!hasArrayImages && data.raw_message && typeof data.raw_message === 'string') {
+    extractFromCQ(data.raw_message);
+  }
+  
+  // 生成代理URL数组，确保唯一性
+  const images = [];
+  const proxySet = new Set();
+  for (const url of urlSet) {
+    const proxyUrl = 'proxy.php?url=' + encodeURIComponent(url);
+    if (!proxySet.has(proxyUrl)) {
+      proxySet.add(proxyUrl);
+      images.push(proxyUrl);
+    }
+  }
+  // 再次确保唯一性
+  return [...new Set(images)];
+}
+
+function normalizeChars(text) {
+  for(const [from, to] of Object.entries(CHAR_MAP)) {
+    text = text.split(from).join(to);
+  }
+  return text;
+}
+
+function getNormalizedText(data) {
+  let text = data.raw_message || String(data.message || '');
+  
+  // 1. 删除图片标记
+  text = text.replace(CQ_IMAGE_REG, '');
+  
+  // 2. 删除淘口令及其前后的数字字母
+  text = text.replace(CLEAN_TAO_REG, '');
+  
+  // 3. 删除所有链接（京东链接也直接删除，不替换为JD）
+  text = text.replace(/https?:\/\/[^\s<>]+/gi, '');
+  
+  // 4. 删除空格和换行
+  text = text.replace(/\s+/g, '');
+  
+  // 5. 删除特殊表情和符号（保留数字、中文、英文、基本标点）
+  text = text.replace(/[→←↑↓💰￥¥$¥￥~〰～⭕✔✖⚠❗❕📢📣📅📆⏰⏳🎁🔔🔵📌❤💚💛💜🧡✅❌🔴🟠🟡🟢⚫⚪🏠👤👍👏🤝⭐🌟★🎉🎊🛒🛍🧧🔥]+/gu, '');
+  
+  // 6. 字符归一化
+  text = normalizeChars(text);
+  text = normalizeOCR(text);
+  
+  return text.trim();
+}
+
+function getContentHash(data) {
+  const text = getNormalizedText(data);
+  const productMatch = text.match(/[一-龥]{2,}(?:g|ml|包|袋|瓶|箱|件|个|支|套|罐|盒|筒)/);
+  const product = productMatch ? productMatch[0] : '';
+  let price = '';
+  const priceMatch = text.match(/凑后[【\[(]?(\d+(?:\.\d+)?)[】\]]?元?|到手(\d+(?:\.\d+)?)元/);
+  if (priceMatch) {
+    price = priceMatch[1] || priceMatch[2] || '';
+  }
+  if (product && price) {
+    return simpleHash(product + '|' + price);
+  }
+  return simpleHash(text);
+}
+
+function updateStatus(connected){
+  dot.className = 'dot' + (connected ? ' connected' : '');
+  statusText.textContent = connected ? '已连接' : '未连接';
+  connectBtn.textContent = connected ? '断开' : '连接';
+  connectBtn.disabled = false;
+  if(connected){
+    connectBtn.classList.add('connected');
+    wsUrlInput.disabled = true;
+  } else {
+    connectBtn.classList.remove('connected');
+    wsUrlInput.disabled = false;
+  }
+}
+
+function formatTime(timestamp){
+  const d = new Date(timestamp * 1000);
+  return d.toLocaleTimeString('zh-CN', {
+    hour:'2-digit', minute:'2-digit', second:'2-digit'
+  });
+}
+
+function escapeHtml(text){
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function escapeAttr(text) {
+  return String(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function makeLinksClickable(text) {
+  const urlPattern = /((https?:\/\/|www\.)[^\s<>"]+)/gi;
+  return text.replace(urlPattern, (url) => {
+    let href = url.startsWith('www.') ? 'https://' + url : url;
+    // 安全校验：只允许 http 和 https 协议
+    try {
+      const parsed = new URL(href);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return escapeAttr(url); // 不安全的协议不转换为链接
+      }
+    } catch(e) {
+      return escapeAttr(url);
+    }
+    const linkClick = window.__TAURI__ 
+      ? `event.preventDefault(); window.__TAURI__.shell.open('${href}');`
+      : `window.open('${href}', '_blank');`;
+    return `<a href="${href}" onclick="${linkClick}" class="msg-link">${escapeAttr(url)}</a>`;
+  });
+}
+
+function createMsgCard(data, { contentDupInfo = null, productDupInfo = null, productIds = [], isHighlight = false, highlightKeywords = [], matchReason = '' } = {}) {
+  const card = document.createElement('div');
+  card.className = 'msg-card';
+  if (isHighlight) card.classList.add('highlight');
+  
+  const source = data.group_name || data.group_id || '未知来源';
+  const time = formatTime(data.time || Date.now() / 1000);
+  const content = cleanContent(data.raw_message || data.message || '');
+  const images = extractImages(data);
+  const nickname = data.sender?.nickname || '';
+  const userId = data.sender?.user_id || '';
+  const msgId = data.local_id || globalMsgId;
+  const hash = getContentHash(data);
+  card.dataset.hash = hash;
+  if (productIds.length > 0) card.dataset.productIds = JSON.stringify(productIds);
+  
+  let imagesHtml = '';
+  const hasTextContent = content.trim().length > 0;
+  // 只有图片没有文字时，不在主窗口显示图片；有文字时正常显示
+  if (images.length > 0 && hasTextContent) {
+    imagesHtml = images.map(img => `<img class="msg-image" src="${img}" alt="图片" referrerpolicy="no-referrer" crossorigin="anonymous" onerror="this.style.border='2px red solid'; this.title='加载失败: '+this.src;">`).join('');
+  }
+  
+  let dupGroupsHtml = `
+    <div class="dup-groups">
+      <div class="dup-groups-list"></div>
+    </div>
+  `;
+  
+  card.innerHTML = `
+   <div class="msg-header">
+     <div class="msg-source-wrap">
+       <div class="msg-source"><span class="group-icon">🏠</span>${escapeHtml(source)}</div>
+       ${matchReason ? `<span class="match-reason">${escapeHtml(matchReason)}</span>` : ''}
+       <span class="dup-tag hidden"></span>
+     </div>
+     <div class="msg-time">${time}</div>
+   </div>
+   ${dupGroupsHtml}
+    <div class="msg-body">
+      <div class="msg-content">${makeLinksClickable(escapeHtml(content))}</div>
+      ${imagesHtml}
+    </div>
+    <div class="msg-footer">
+      <div class="msg-meta">
+        ${nickname ? `<span>👤 ${escapeHtml(nickname)}</span>` : ''}
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="copy-btn" data-images="${escapeAttr(JSON.stringify(images))}" data-content="${escapeAttr(content)}">复制</button>
+        <button class="context-btn" data-group-id="${data.group_id || ''}" data-group-name="${escapeAttr(source)}" data-time="${data.time || 0}" data-local-id="${msgId}">查看上下文</button>
+      </div>
+    </div>
+  `;
+  
+  return card;
+}
+
+function updateDupTag(card, dupInfo){
+  const tag = card.querySelector('.dup-tag:not(.product-dup)');
+  if (tag) {
+    tag.innerHTML = `${dupInfo.count}个群发送了同样的消息 <span class="arrow">↑</span>`;
+    tag.dataset.groups = JSON.stringify(dupInfo.groups);
+    tag.classList.toggle('hidden', dupInfo.count <= 1);
+  }
+  updateAllGroupsTag(card);
+}
+
+function updateAllGroupsTag(card) {
+  const hash = card.dataset.hash;
+  const dupInfo = duplicateTracker.get(hash);
+  const pInfoKeys = JSON.parse(card.dataset.productIds || '[]');
+  const pInfos = pInfoKeys.map(id => productDuplicateTracker.get(id)).filter(Boolean);
+  const groupsDiv = card.querySelector('.dup-groups-list');
+  if (!groupsDiv) return;
+  const allGroups = [...new Set([
+    ...(dupInfo?.groups || []),
+    ...pInfos.flatMap(p => p.groups || [])
+  ])];
+  groupsDiv.innerHTML = allGroups.map(g => `<span>🏠 ${escapeHtml(g)}</span>`).join('');
+}
+
+function updateCardProductTag(card, pInfo) {
+  let tag = card.querySelector('.product-dup');
+  const pInfoKeys = JSON.parse(card.dataset.productIds || '[]');
+  const allPInfos = pInfoKeys.map(id => productDuplicateTracker.get(id)).filter(Boolean);
+  const totalCount = allPInfos.reduce((sum, p) => sum + (p.count || 1), 0);
+  if (allPInfos.length > 0) {
+    if (!tag) {
+      tag = document.createElement('span');
+      tag.className = 'dup-tag product-dup';
+      const sourceWrap = card.querySelector('.msg-source-wrap');
+      sourceWrap.appendChild(tag);
+    }
+    tag.innerHTML = `🛒 ${totalCount}个群发送了同款商品 <span class="arrow">↑</span>`;
+    tag.dataset.groups = JSON.stringify(allPInfos.flatMap(p => p.groups || []));
+    tag.dataset.productId = pInfo.productId;
+    tag.classList.remove('hidden');
+  }
+  updateAllGroupsTag(card);
+}
+
+async function copyContent(btn, images, content){
+  // 检查内容
+  if (!content || content.trim() === '') {
+    btn.textContent = '内容为空';
+    btn.style.background = '#ff9800';
+    setTimeout(() => { btn.textContent = '复制'; btn.style.background = ''; }, 2000);
+    return;
+  }
+  
+  console.log('[复制] 尝试复制内容, length:', content.length);
+  btn.textContent = '复制中...';
+  
+  // 使用 Tauri 命令复制
+  if (window.__TAURI__) {
+    try {
+      const { invoke } = window.__TAURI__;
+      const imageUrl = (images && images.length > 0) ? images[0] : null;
+      await invoke('copy_to_clipboard', { text: content, imageUrl: imageUrl });
+      console.log('[复制] 成功 (Tauri)');
+      btn.textContent = '✓ 已复制';
+      btn.style.background = '#4caf50';
+      setTimeout(() => {
+        btn.textContent = '复制';
+        btn.style.background = '';
+      }, 2000);
+      return;
+    } catch (e) {
+      console.warn('[复制] Tauri命令失败:', e.message || e);
+    }
+  }
+  
+  // 浏览器原生方案
+  try {
+    await navigator.clipboard.writeText(content);
+    console.log('[复制] 成功 (浏览器API)');
+    btn.textContent = '✓ 已复制';
+    btn.style.background = '#4caf50';
+    setTimeout(() => {
+      btn.textContent = '复制';
+      btn.style.background = '';
+    }, 2000);
+    return;
+  } catch(e) {
+    console.warn('[复制] 现代API失败:', e.message || e);
+  }
+  
+  // 降级方案
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = content;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    console.log('[复制] 降级方案成功');
+    btn.textContent = '✓';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = '复制';
+      btn.classList.remove('copied');
+    }, 1500);
+    return;
+  } catch(e2) {
+    console.error('[复制] 降级方案也失败:', e2);
+  }
+  
+  btn.textContent = '失败';
+  setTimeout(() => {
+    btn.textContent = '复制';
+  }, 1500);
+}
+
+// 重点消息弹窗 - 桌面版使用独立窗口置顶显示
+function showInPagePopup(source, content, reasons, images, data) {
+  if (popupMode !== 'on') return;
+  
+  const matchReason = reasons.length > 0 ? `[${reasons.join(', ')}]` : '';
+  const time = new Date().toLocaleString('zh-CN');
+  const cleanedContent = cleanContent(content);
+  const imagesHtml = images && images.length > 0 ? images.map(img => `<img class="msg-image" src="${img}" alt="图片" referrerpolicy="no-referrer" crossorigin="anonymous" onerror="this.style.border='2px red solid'; this.title='加载失败: '+this.src;">`).join('') : '';
+  
+  const groupId = data?.group_id || '';
+  const groupName = source;
+  const msgTime = data?.time || 0;
+  const localId = data?.local_id || 0;
+  
+  // 桌面版：使用 Tauri 创建独立置顶窗口
+  if (window.__TAURI__) {
+    const popupHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          *{box-sizing:border-box;margin:0;padding:0;}
+          body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#fff8e1;padding:16px;}
+          .msg-card{background:#fff;border:2px solid #ff9800;border-radius:12px;overflow:hidden;}
+          .msg-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#fff3e0;border-bottom:1px solid #ff9800;}
+          .msg-source-wrap{display:flex;align-items:center;gap:8px;flex:1;min-width:0;overflow:hidden;}
+          .msg-source{font-weight:600;color:#1a1a1a;font-size:14px;}
+          .group-icon{color:#07c160;margin-right:6px;}
+          .match-reason{font-size:12px;color:#ff9800;}
+          .msg-time{color:#999;font-size:12px;}
+          .msg-body{padding:16px;}
+          .msg-content{color:#333;line-height:1.7;white-space:pre-wrap;word-break:break-all;}
+          .msg-image{max-width:100%;max-height:200px;border-radius:8px;margin-top:10px;display:block;}
+          .msg-footer{padding:12px 16px;border-top:1px solid #f0f0f0;display:flex;gap:8px;justify-content:flex-end;}
+          .btn{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:13px;}
+          .copy-btn{background:#2196f3;color:#fff;}
+          .copy-btn:hover{background:#1976d2;}
+          .copy-btn.copied{background:#4caf50;}
+          .context-btn{background:#e3f2fd;color:#1976d2;}
+          .context-btn:hover{background:#bbdefb;}
+          .close-btn{background:#f5f5f5;color:#666;border:1px solid #ddd;}
+          .close-btn:hover{background:#e0e0e0;}
+        </style>
+      </head>
+      <body>
+        <div class="msg-card">
+          <div class="msg-header">
+            <div class="msg-source-wrap">
+              <span class="group-icon">🏠</span>
+              <span class="msg-source">${escapeHtml(source)}</span>
+              <span class="match-reason">${escapeHtml(matchReason)}</span>
+            </div>
+            <span class="msg-time">${time}</span>
+          </div>
+          <div class="msg-body">
+            <div class="msg-content">${makeLinksClickable(escapeHtml(cleanedContent))}</div>
+            ${imagesHtml}
+          </div>
+          <div class="msg-footer">
+            <button class="btn copy-btn" id="copyBtn">复制</button>
+            <button class="btn context-btn" id="contextBtn">查看上下文</button>
+            <button class="btn close-btn" id="closeBtn">关闭</button>
+          </div>
+        </div>
+        <script>
+          const images = ${JSON.stringify(images || [])};
+          const content = ${JSON.stringify(cleanedContent)};
+          const groupId = ${JSON.stringify(groupId)};
+          const groupName = ${JSON.stringify(groupName)};
+          const msgTime = ${msgTime};
+          const localId = ${localId};
+          
+          document.getElementById('closeBtn').onclick = () => window.close();
+          
+          document.getElementById('copyBtn').onclick = async function() {
+            this.textContent = '复制中...';
+            this.style.background = '#2196f3';
+            try {
+              // 检查内容是否为空
+              if ((!content || content.trim() === '') && (!images || images.length === 0)) {
+                throw new Error('无可复制内容');
+              }
+              // 使用 Tauri API 复制（支持文字+图片）
+              const { invoke } = window.__TAURI__;
+              const imageUrl = (images && images.length > 0) ? images[0] : null;
+              const result = await invoke('copy_to_clipboard', { 
+                text: content || '', 
+                imageUrl: imageUrl 
+              });
+              console.log('复制结果:', result);
+              this.textContent = '✓ 已复制';
+              this.style.background = '#4caf50';
+              setTimeout(() => { 
+                this.textContent = '复制'; 
+                this.style.background = '';
+              }, 2500);
+            } catch(e) {
+              console.error('复制失败:', e);
+              this.textContent = '复制失败';
+              this.style.background = '#f44336';
+              setTimeout(() => { 
+                this.textContent = '复制'; 
+                this.style.background = '';
+              }, 2500);
+            }
+          };
+          
+          document.getElementById('contextBtn').onclick = () => {
+            window.opener?.postMessage({ type: 'show_context', groupId, groupName, localId }, '*');
+            window.close();
+          };
+        <\/script>
+      </body>
+      </html>
+    `;
+    
+    // 使用 data URL 创建窗口
+    const blob = new Blob([popupHtml], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const popupWindow = window.open(url, '_blank', 'width=450,height=400,center=yes,resizable=yes');
+    
+    // 10秒后自动关闭
+    setTimeout(() => {
+      if (popupWindow && !popupWindow.closed) {
+        popupWindow.close();
+      }
+    }, 10000);
+    
+    return;
+  }
+  
+  // 网页版：使用内嵌弹窗（降级方案）
+  contextTitle.textContent = `🏠 ${source} ${matchReason} ${time}`;
+  contextList.innerHTML = '';
+  
+  const cardHtml = `
+    <div class="msg-card highlight" style="margin:0;border-radius:12px;">
+      <div class="msg-header">
+        <div class="msg-source-wrap">
+          <div class="msg-source"><span class="group-icon">🏠</span>${escapeHtml(source)}</div>
+          <span class="match-reason">${escapeHtml(matchReason)}</span>
+        </div>
+        <div class="msg-time">${time}</div>
+      </div>
+      <div class="msg-body">
+        <div class="msg-content">${makeLinksClickable(escapeHtml(cleanedContent))}</div>
+        ${imagesHtml}
+      </div>
+      <div class="msg-footer">
+        <div class="msg-meta"></div>
+        <div style="display:flex;gap:8px;">
+          <button class="copy-btn" data-images="${escapeAttr(JSON.stringify(images || []))}" data-content="${escapeAttr(cleanedContent)}">复制</button>
+          <button class="context-btn" data-group-id="${escapeAttr(groupId)}" data-group-name="${escapeAttr(groupName)}" data-time="${msgTime}" data-local-id="${localId}">查看上下文</button>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  contextList.innerHTML = cardHtml;
+  isHighlightPopup = true;
+  contextModal.classList.add('show');
+  
+  setTimeout(() => {
+    contextModal.classList.remove('show');
+    isHighlightPopup = false;
+  }, 10000);
+}
+
+function getContextMessages(groupId, currentLocalId) {
+  const gid = Number(groupId) || 0;
+  const groupMessages = savedMessages.filter(m => Number(m.group_id) === gid);
+  if (groupMessages.length === 0) return [];
+  
+  const sorted = [...groupMessages].sort((a, b) => (a.time || 0) - (b.time || 0));
+  const safeLocalId = Number(currentLocalId) || 0;
+  let currentIndex = sorted.findIndex(m => m.local_id === safeLocalId);
+  if (currentIndex === -1) currentIndex = 0;
+  
+  const ctxCount = 5;
+  const start = Math.max(0, currentIndex - ctxCount);
+  const end = Math.min(sorted.length - 1, currentIndex + ctxCount);
+  
+  return sorted.slice(start, end + 1).map((m, i) => ({
+    ...m,
+    isCurrent: i === currentIndex - start,
+    index: start + i
+  }));
+}
+
+function showContextModal(groupId, groupName, currentLocalId) {
+  const messages = getContextMessages(groupId, currentLocalId);
+
+  contextTitle.textContent = `🏠 ${groupName}  #${currentLocalId}`;
+  contextList.innerHTML = '';
+
+  let currentIdx = -1;
+  if (messages.length === 0) {
+    contextList.innerHTML = `<div style="color:#999;padding:20px;text-align:center;">暂无上下文</div>`;
+  } else {
+    messages.forEach((msg, i) => {
+      if(msg.isCurrent) currentIdx = i;
+
+      const item = document.createElement('div');
+      item.className = 'ctx-item' + (msg.isCurrent ? ' current' : '');
+      item.dataset.images = JSON.stringify(extractImages(msg));
+      item.dataset.content = escapeHtml(cleanContent(msg.raw_message || msg.message || ''));
+      item.dataset.rawMessage = escapeHtml(msg.raw_message || msg.message || '');
+
+      const senderName = msg.sender?.nickname || '未知';
+      const senderTime = formatTime(msg.time || 0);
+      const images = extractImages(msg);
+      const imagesHtml = images.map(img => `<img class="ctx-img" src="${img}" alt="图片" referrerpolicy="no-referrer" crossorigin="anonymous" onerror="this.style.border='2px red solid'; this.title='加载失败: '+this.src;">`).join('');
+      const content = escapeHtml(cleanContent(msg.raw_message || msg.message || ''));
+
+      item.innerHTML = `
+        <div class="ctx-header">
+          <div class="ctx-sender"><span class="ctx-icon">👤</span>${escapeHtml(senderName)} <button class="ctx-copy-btn" style="margin-left:8px;padding:1px 8px;font-size:11px;vertical-align:middle;">复制</button></div>
+          <div class="ctx-time">${senderTime}</div>
+        </div>
+        <div class="ctx-body">
+          <div class="ctx-content">${makeLinksClickable(content)}</div>
+          ${imagesHtml}
+        </div>
+      `;
+
+      contextList.appendChild(item);
+
+      if (i < messages.length - 1) {
+        const nextTime = messages[i + 1].time || 0;
+        const currTime = msg.time || 0;
+        const diff = nextTime - currTime;
+        if (diff > 120) {
+          const gap = document.createElement('div');
+          gap.className = 'ctx-gap';
+          gap.textContent = `⏱ ${Math.floor(diff / 60)} 分钟后`;
+          contextList.appendChild(gap);
+        }
+      }
+    });
+  }
+
+  contextModal.classList.add('show');
+  isHighlightPopup = false; // 确保查看上下文弹窗可以点击其他地方关闭
+  const currentEl = contextList.querySelector('.ctx-item.current');
+  if (currentEl) {
+    setTimeout(() => {
+      currentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 50);
+  }
+}
+
+function checkTextDuplicate(hash, normalizedText, source, now, rawText) {
+  if (duplicateTracker.has(hash)) {
+    const info = duplicateTracker.get(hash);
+    if (!info.groups.includes(source)) {
+      info.groups.push(source);
+      info.count = info.groups.length;
+    }
+    info.lastTime = now;
+    if (info.card && info.card.parentNode) {
+      updateDupTag(info.card, info);
+      updateAllGroupsTag(info.card);
+    }
+    return true;
+  }
+  // 低于8个字，且含有"湊"或"凑"字，直接重复过滤掉
+  if (rawText && normalizedText.length < 8 && /凑|湊/.test(rawText)) {
+    return true;
+  }
+  // 快速检查：如果长度差异太大，直接跳过相似度计算（避免性能问题）
+  const len = normalizedText.length;
+  for (const [existingHash, info] of duplicateTracker) {
+    const existingLen = info.normalizedText.length;
+    // 长度差异超过 30%，不可能达到 0.75 的相似度
+    if (Math.abs(len - existingLen) > Math.max(len, existingLen) * 0.3) {
+      continue;
+    }
+    if (textSimilarity(normalizedText, info.normalizedText) >= SIMILARITY_THRESHOLD) {
+      if (!info.groups.includes(source)) {
+        info.groups.push(source);
+        info.count = info.groups.length;
+      }
+      info.lastTime = now;
+      if (info.card && info.card.parentNode) {
+        updateDupTag(info.card, info);
+        updateAllGroupsTag(info.card);
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+async function addMessage(data){
+  const rawText = data.raw_message || data.message || '';
+  
+  const allCodes = extractAllTaoCodes(data);
+  const now = Date.now();
+  const source = data.group_name || data.group_id || '未知来源';
+  const content = cleanContent(rawText);
+  const contentPreview = content.substring(0, 25);
+
+  const hash = getContentHash(data);
+  const normalizedText = getNormalizedText(data);
+
+  console.log(`[DEBUG] hash=${hash} norm=${normalizedText} codes=${JSON.stringify(allCodes)}`);
+
+  // 先保存消息到 savedMessages
+  globalMsgId++;
+  data.local_id = globalMsgId;
+  savedMessages.push(data);
+  if(savedMessages.length > 500) savedMessages = savedMessages.slice(-500);
+  saveMessages();
+  
+  // 检查是否只有图片没有文案
+  const hasTextContent = content.trim().length > 0;
+  const hasImages = extractImages(data).length > 0;
+  const onlyImagesNoText = !hasTextContent && hasImages;
+  
+  // 如果只有图片没有文案，不显示在主窗口，直接返回
+  if (onlyImagesNoText) {
+    log(`[纯图消息] ${source}\n${contentPreview}...`);
+    return;
+  }
+
+  // 2. 文案重复检测，先把连接、口令、图片剔除掉再进行文案重复过滤
+  // getNormalizedText 已经做了这个处理，现在不管有没有图片都进行内容去重
+  if (checkTextDuplicate(hash, normalizedText, source, now, rawText)) {
+    log(`[已过滤] ${source}\n${contentPreview}...`);
+    return;
+  }
+
+  // Extract JD product IDs from URLs
+  const jdIds = await extractJDProductIds(data);
+  console.log(`[DEBUG] JD IDs=${JSON.stringify(jdIds)}`);
+  
+  // Fetch Taobao product IDs for codes (parallel)
+  let productResults = [];
+  if (allCodes.length > 0) {
+    const results = await Promise.all(allCodes.map(code => fetchProductId('￥' + code + '￥')));
+    results.forEach((id, i) => {
+      if (id) productResults.push({ code: allCodes[i], productId: id });
+    });
+  }
+  
+  // Add JD IDs to productResults
+  jdIds.forEach(id => productResults.push({ code: null, productId: id }));
+  
+  console.log(`[DEBUG] allProductIds=${JSON.stringify(productResults.map(r => r.productId))} trackerKeys=${JSON.stringify([...productDuplicateTracker.keys()])}`);
+  
+  // 3. 商品ID去重，就算文案没有重复过，也有商品id过滤
+  const existingProductIds = productResults.filter(r => productDuplicateTracker.has(r.productId));
+  if (existingProductIds.length > 0) {
+    for (const { productId } of existingProductIds) {
+      const pInfo = productDuplicateTracker.get(productId);
+      if (pInfo && !pInfo.groups.includes(source)) {
+        pInfo.groups.push(source);
+        pInfo.count = pInfo.groups.length;
+      }
+      if (pInfo && pInfo.card) {
+        updateCardProductTag(pInfo.card, pInfo);
+        updateAllGroupsTag(pInfo.card);
+      }
+    }
+    log(`[同商品] ${source}\n${contentPreview}...`);
+    return;
+  }
+
+  if(msgCount === 0){
+    messagesDiv.innerHTML = '';
+  }
+  msgCount++;
+  countSpan.textContent = msgCount;
+
+  const hlResult = hlIsHighlight(data, allCodes);
+  const newProductIds = productResults.map(r => r.productId).filter(id => id);
+  const matchReason = hlResult.reasons.length > 0 ? `[${hlResult.reasons.join(', ')}]` : '';
+  const card = createMsgCard(data, { contentDupInfo: { count: 1, groups: [source] }, productDupInfo: null, productIds: newProductIds, isHighlight: hlResult.triggered, highlightKeywords: hlResult.keywords, matchReason: matchReason });
+
+  const wasAtBottomBefore = document.body.scrollHeight - window.scrollY - window.innerHeight < 50;
+
+  messagesDiv.appendChild(card);
+
+  for (const productId of newProductIds) {
+    if (productId) {
+      productDuplicateTracker.set(productId, {
+        productId,
+        content: data.raw_message || data.message || '',
+        count: 1,
+        groups: [source],
+        firstTime: now,
+        lastTime: now,
+        card: card
+      });
+    }
+  }
+  
+  if (wasAtBottomBefore) {
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'instant' });
+    });
+    unreadCount = 0;
+    unreadBadge.classList.remove('show');
+    messagesDiv.querySelectorAll('[data-unread="true"]').forEach(el => el.removeAttribute('data-unread'));
+  } else {
+    card.dataset.unread = 'true';
+    unreadCount++;
+    unreadBadge.textContent = unreadCount > 99 ? '99+' : `获取到新消息 ${unreadCount}`;
+    unreadBadge.classList.add('show');
+  }
+  
+  const dupInfo = {
+    content: data.raw_message || data.message || '',
+    normalizedText: normalizedText,
+    count: 1,
+    groups: [source],
+    firstTime: now,
+    lastTime: now,
+    card: card
+  };
+  duplicateTracker.set(hash, dupInfo);
+  // 初始化重复标签
+  updateDupTag(card, dupInfo);
+  
+  log(`[新消息] #${globalMsgId} ${source}\n${contentPreview}...`);
+  
+  if (displayMode === 'highlight' && !hlResult.triggered) {
+    card.classList.add('hidden-by-mode');
+  }
+  
+  // 重点消息弹窗通知（网页版）
+  if (hlResult.triggered) {
+    const content = data.raw_message || data.message || '';
+    const images = extractImages(data);
+    showInPagePopup(source, content, hlResult.reasons, images, data);
+  }
+  
+}
+
+function cleanupDuplicateTracker(){
+  const now = Date.now();
+  for(const [hash, info] of duplicateTracker){
+    if(now - info.lastTime > DEDUP_DURATION){
+      // 如果卡片已从DOM移除，先删除card属性
+      if (info.card && !info.card.parentNode) {
+        delete info.card;
+      }
+      duplicateTracker.delete(hash);
+    }
+  }
+  for(const [productId, info] of productDuplicateTracker){
+    if(now - info.lastTime > DEDUP_DURATION){
+      if (info.card && !info.card.parentNode) {
+        delete info.card;
+      }
+      productDuplicateTracker.delete(productId);
+    }
+  }
+}
+
+function renderMessagesByMode() {
+  const cards = messagesDiv.querySelectorAll('.msg-card');
+  cards.forEach(card => {
+    if (displayMode === 'highlight') {
+      if (card.classList.contains('highlight')) {
+        card.classList.remove('hidden-by-mode');
+      } else {
+        card.classList.add('hidden-by-mode');
+      }
+    } else {
+      card.classList.remove('hidden-by-mode');
+    }
+  });
+  
+  const visibleCount = messagesDiv.querySelectorAll('.msg-card:not(.hidden-by-mode)').length;
+  countSpan.textContent = visibleCount;
+}
+
+  function saveMessages(){
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try{
+        // 安全检查：确保 savedMessages 是数组
+        if (!Array.isArray(savedMessages)) {
+          savedMessages = [];
+        }
+        let dataStr;
+        try {
+          dataStr = JSON.stringify(savedMessages);
+        } catch (e) {
+          console.error('JSON stringify error, clearing saved messages:', e);
+          savedMessages = [];
+          dataStr = '[]';
+        }
+        if(dataStr.length > 2 * 1024 * 1024){
+          const seen = new Set();
+          savedMessages = savedMessages.reverse().filter(msg => {
+            const hash = getContentHash(msg);
+            if(seen.has(hash)) return false;
+            seen.add(hash);
+            return true;
+          }).slice(0, 500).reverse();
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(savedMessages));
+        localStorage.setItem(STORAGE_URL_KEY, wsUrlInput ? wsUrlInput.value : '');
+        localStorage.setItem(STORAGE_MSG_ID_KEY, globalMsgId);
+      } catch(e){ 
+        console.error('Save error:', e);
+        // 尝试清理 localStorage
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch (cleanErr) {
+          console.error('Cleanup error:', cleanErr);
+        }
+      }
+    }, 3000);
+  }
+  
+  function flushSave() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      try {
+        // 安全检查
+        if (!Array.isArray(savedMessages)) {
+          savedMessages = [];
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(savedMessages));
+        localStorage.setItem(STORAGE_URL_KEY, wsUrlInput ? wsUrlInput.value : '');
+        localStorage.setItem(STORAGE_MSG_ID_KEY, globalMsgId);
+      } catch(e) { 
+        console.error('Flush save error:', e); 
+        // 尝试清理 localStorage
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch (cleanErr) {
+          console.error('Cleanup error:', cleanErr);
+        }
+      }
+    }
+  }
+
+  function loadMessages(){
+    try{
+      const saved = localStorage.getItem(STORAGE_KEY);
+      const savedUrl = localStorage.getItem(STORAGE_URL_KEY);
+      const savedMsgId = localStorage.getItem(STORAGE_MSG_ID_KEY);
+      if(saved){
+        const parsed = JSON.parse(saved);
+        // 安全检查：确保 parsed 是数组
+        if (Array.isArray(parsed)) {
+          const seen = new Set();
+          savedMessages = parsed.filter(msg => {
+            // 安全检查：确保 msg 是对象
+            if (!msg || typeof msg !== 'object') {
+              return false;
+            }
+            const hash = getContentHash(msg);
+            if(seen.has(hash)) return false;
+            seen.add(hash);
+            return true;
+          });
+        } else {
+          console.warn('Saved messages is not an array, resetting');
+          savedMessages = [];
+        }
+      }
+      if(savedUrl && wsUrlInput) wsUrlInput.value = savedUrl;
+      if(savedMsgId) globalMsgId = parseInt(savedMsgId) || 0;
+    } catch(e){ 
+      console.error('Load error:', e); 
+      // 出错时重置
+      savedMessages = [];
+    }
+  }
+
+function renderSavedMessages(){
+  if(savedMessages.length > 0){
+    messagesDiv.innerHTML = '';
+    duplicateTracker.clear();
+    
+    savedMessages.forEach((msg, i) => {
+      if (!msg.local_id) {
+        msg.local_id = i + 1;
+      }
+      const hash = getContentHash(msg);
+      const source = msg.group_name || msg.group_id || '未知来源';
+      const allCodes = extractAllTaoCodes(msg);
+      const hlResult = hlIsHighlight(msg, allCodes);
+      const matchReason = hlResult.reasons.length > 0 ? `[${hlResult.reasons.join(', ')}]` : '';
+      
+      if(duplicateTracker.has(hash)){
+        const info = duplicateTracker.get(hash);
+        if(!info.groups.includes(source)){
+          info.groups.push(source);
+          info.count = info.groups.length;
+        }
+        updateDupTag(info.card, info);
+        updateAllGroupsTag(info.card);
+      } else {
+        const card = createMsgCard(msg, { contentDupInfo: { count: 1, groups: [source] }, productDupInfo: null, productIds: [], isHighlight: hlResult.triggered, highlightKeywords: hlResult.keywords, matchReason: matchReason });
+        messagesDiv.appendChild(card);
+        
+        // 限制左侧面板卡片数量，防止内存泄漏
+        const maxCards = 200;
+        if (messagesDiv.children.length > maxCards) {
+          const toRemove = messagesDiv.children.length - maxCards;
+          for (let i = 0; i < toRemove; i++) {
+            messagesDiv.removeChild(messagesDiv.children[0]);
+          }
+        }
+        msgCount++;
+        countSpan.textContent = msgCount;
+        
+        const msgNormalizedText = getNormalizedText(msg);
+        const dupInfo = {
+          content: msg.raw_message || msg.message || '',
+          normalizedText: msgNormalizedText,
+          count: 1,
+          groups: [source],
+          firstTime: Date.now(),
+          lastTime: Date.now(),
+          card: card
+        };
+        duplicateTracker.set(hash, dupInfo);
+        // 初始化重复标签
+        updateDupTag(card, dupInfo);
+      }
+    });
+    const scrollToBottom = () => {
+      window.scrollTo(0, document.body.scrollHeight);
+    };
+    requestAnimationFrame(() => {
+      scrollToBottom();
+      // 延迟再次滚动，确保图片等资源加载后位置准确
+      setTimeout(scrollToBottom, 300);
+    });
+  }
+  renderMessagesByMode();
+}
+
+function connect(){
+  const url = wsUrlInput.value.trim();
+  console.log('[WS] 尝试连接:', url);
+  if(!url) {
+    console.log('[WS] URL为空');
+    return;
+  }
+  
+  // 如果重连次数超过5次，停止自动重连
+  if(reconnectCount >= 5) {
+    console.log('已达到最大重连次数（5次），停止自动重连');
+    return;
+  }
+  
+  if(reconnectTimer){
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  
+  if(ws){
+    ws.close();
+    ws = null;
+  }
+  
+  updateStatus(false);
+  connectBtn.disabled = true;
+  
+  try{
+    ws = new WebSocket(url);
+    
+    ws.onopen = () => {
+      console.log('[WS] 连接成功');
+      reconnectCount = 0;
+      updateStatus(true);
+      cleanupTimer = setInterval(cleanupDuplicateTracker, 60000);
+      clearLog();
+    };
+    
+    ws.onmessage = (event) => {
+      try{
+        const data = JSON.parse(event.data);
+        if(data.post_type !== 'meta_event'){
+          addMessage(data);
+        }
+      } catch(e){
+        console.log('Parse error:', e);
+      }
+    };
+    
+    ws.onclose = (event) => {
+      console.log('[WS] 连接关闭, code:', event.code, 'reason:', event.reason);
+      if(isManualClose){
+        isManualClose = false;
+        updateStatus(false);
+        return;
+      }
+      updateStatus(false);
+      if(cleanupTimer){
+        clearInterval(cleanupTimer);
+        cleanupTimer = null;
+      }
+      reconnectCount++;
+      if(reconnectCount >= 5) {
+        console.log('已达到最大重连次数（5次），停止自动重连');
+        return;
+      }
+      reconnectTimer = setTimeout(() => {
+        connect();
+      }, 3000);
+    };
+    
+    ws.onerror = (err) => {
+      console.error('[WS] 错误:', err);
+    };
+  } catch(e){
+    console.error('连接失败:', e);
+    reconnectCount++;
+    if(reconnectCount >= 5) {
+      console.log('已达到最大重连次数（5次），停止自动重连');
+      return;
+    }
+    reconnectTimer = setTimeout(() => {
+      connect();
+    }, 3000);
+  }
+}
+
+function toggleConnect(){
+  if(ws && ws.readyState === WebSocket.OPEN){
+    isManualClose = true;
+    ws.close();
+  } else {
+    connect();
+  }
+}
+
+// 事件绑定
+connectBtn.addEventListener('click', toggleConnect);
+
+clearBtn.addEventListener('click', () => {
+  savedMessages = [];
+  duplicateTracker.clear();
+  productDuplicateTracker.clear();
+  msgCount = 0;
+  globalMsgId = 0;
+  countSpan.textContent = 0;
+  unreadCount = 0;
+  unreadBadge.classList.remove('show');
+  messagesDiv.innerHTML = '<div class="empty">等待新消息...</div>';
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(STORAGE_MSG_ID_KEY);
+  clearLog();
+});
+
+wsUrlInput.addEventListener('change', saveMessages);
+wsUrlInput.addEventListener('keypress', (e) => {
+  if(e.key === 'Enter' && !wsUrlInput.disabled){
+    connect();
+  }
+});
+
+const displayModeSelect = document.getElementById('displayMode');
+if (displayModeSelect) {
+  displayModeSelect.addEventListener('change', (e) => {
+    displayMode = e.target.value;
+    localStorage.setItem('ws_monitor_display_mode', displayMode);
+    renderMessagesByMode();
+  });
+  const savedMode = localStorage.getItem('ws_monitor_display_mode');
+  if (savedMode) {
+    displayMode = savedMode;
+    displayModeSelect.value = savedMode;
+  }
+}
+
+const popupModeSelect = document.getElementById('popupMode');
+if (popupModeSelect) {
+  // 强制确保 popupMode 是正确的值
+  const savedPopupMode = localStorage.getItem('ws_monitor_popup_mode');
+  if (savedPopupMode) {
+    popupMode = savedPopupMode;
+  }
+  popupModeSelect.value = popupMode;
+  popupModeSelect.addEventListener('change', (e) => {
+    popupMode = e.target.value;
+    localStorage.setItem('ws_monitor_popup_mode', popupMode);
+  });
+}
+
+// 图片放大
+imgOverlay.addEventListener('click', () => {
+  imgOverlay.classList.remove('show');
+});
+
+// 上下文弹窗关闭
+contextClose.addEventListener('click', () => {
+  contextModal.classList.remove('show');
+  isHighlightPopup = false;
+});
+
+// 点击遮罩层关闭（仅对查看上下文弹窗生效，重点消息弹窗需要点击X关闭）
+contextModal.addEventListener('click', (e) => {
+  if(e.target === contextModal && !isHighlightPopup) {
+    contextModal.classList.remove('show');
+  }
+});
+
+// 自动关闭功能由 showInPagePopup 内的 setTimeout 处理
+
+// 事件委托
+document.addEventListener('click', (e) => {
+  // 图片点击放大
+  if(e.target.classList.contains('msg-image') || e.target.classList.contains('ctx-img')){
+    overlayImg.src = e.target.src;
+    imgOverlay.classList.add('show');
+  }
+
+  // 复制按钮
+  if(e.target.classList.contains('copy-btn') || e.target.classList.contains('ctx-copy-btn') || e.target.closest('.copy-btn') || e.target.closest('.ctx-copy-btn')){
+    const btn = e.target.classList.contains('copy-btn') || e.target.classList.contains('ctx-copy-btn') ? e.target : (e.target.closest('.copy-btn') || e.target.closest('.ctx-copy-btn'));
+    let images = [], content = '';
+    if(btn.classList.contains('ctx-copy-btn')){
+      images = JSON.parse(btn.closest('.ctx-item').dataset.images || '[]');
+      content = btn.closest('.ctx-item').dataset.content || '';
+    } else {
+      images = JSON.parse(btn.dataset.images || '[]');
+      content = btn.dataset.content || '';
+    }
+    copyContent(btn, images, content);
+  }
+  
+  // 上下文按钮（卡片和弹窗中的查看上下文按钮）
+  if(e.target.classList.contains('context-btn') || e.target.classList.contains('ctx-context-btn') || e.target.closest('.context-btn') || e.target.closest('.ctx-context-btn')){
+    const btn = e.target.classList.contains('context-btn') || e.target.classList.contains('ctx-context-btn') ? e.target : e.target.closest('.context-btn, .ctx-context-btn');
+    const groupId = btn.dataset.groupId || '';
+    const groupName = btn.dataset.groupName || '';
+    const localId = parseInt(btn.dataset.localId) || 0;
+    showContextModal(groupId, groupName, localId);
+  }
+  
+  // 重复标记展开
+  if(e.target.classList.contains('dup-tag') || e.target.closest('.dup-tag')){
+    const tag = e.target.classList.contains('dup-tag') ? e.target : e.target.closest('.dup-tag');
+    const card = tag.closest('.msg-card');
+    const groupsDiv = card.querySelector('.dup-groups');
+    const groupsList = card.querySelector('.dup-groups-list');
+    
+    // 如果点击的是已展开的标签，则收起
+    if (tag.classList.contains('expanded')) {
+      tag.classList.remove('expanded');
+      if (groupsDiv) groupsDiv.classList.remove('show');
+    } else {
+      // 收起其他标签
+      card.querySelectorAll('.dup-tag.expanded').forEach(t => t.classList.remove('expanded'));
+      // 展开当前标签
+      tag.classList.add('expanded');
+      if (groupsDiv) groupsDiv.classList.add('show');
+    }
+  }
+  
+
+});
+
+window.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'show_context') {
+    showContextModal(event.data.groupId, event.data.groupName, event.data.localId);
+  }
+});
+
+loadMessages();
+renderSavedMessages();
+
+connect();
+
+// 初始化：隐藏配置区域和状态栏
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelector('.config').classList.remove('show');
+  document.querySelector('.status-bar').classList.remove('show');
+});
+
+// 页面卸载时清理资源
+window.addEventListener('beforeunload', () => {
+  // 保存消息
+  flushSave();
+  
+  // 清理定时器
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer);
+    cleanupTimer = null;
+  }
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  
+  // 关闭 WebSocket 连接
+  if (ws) {
+    isManualClose = true;
+    ws.close();
+    ws = null;
+  }
+});</script>
+</body>
+</html>
